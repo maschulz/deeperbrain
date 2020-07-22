@@ -29,5 +29,5 @@ from joblib import Parallel, delayed
 X = Parallel(n_jobs=20)(delayed(process)(fn) for fn in F)
 
 # pickle.dump({'data': X, 'name': N}, open(PATH + '/ukbb_3d.p', 'wb'))
-pickle.dump({'data': X, 'name': N}, open('/hpcwork/ms883464/ukbb_3d.p', 'wb'))
+pickle.dump({'data': X, 'name': N}, open('/hpcwork/brainml/UKBB/ukbb_3d.p', 'wb'))
 print('saved dataset to drive.')
