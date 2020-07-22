@@ -15,7 +15,7 @@
 
 3) prepare datasets\
 `python prepare_datasets.py mnist` \
-This should work for the publicly available datasets MNIST, Fashion, Tissue (Kather et al. 2019), Superconductivity (Hamidieh et al. 2018). UK Biobank data ist not public, but you can find details on our preprocessing in `lib/ukbb_preprocessing`.
+This should work for the publicly available datasets MNIST, Fashion, Tissue (Kather et al. 2019), Superconductivity (Hamidieh et al. 2018). UK Biobank data is not public, but you can find details on our preprocessing in `lib/ukbb_preprocessing`.
 
 4) run analyses, e.g.:\
 `python run.py --data mnist --model logisticregression --grid v3`
