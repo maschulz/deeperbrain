@@ -1,15 +1,17 @@
 import copy
-from dataclasses import dataclass
 from typing import Tuple
 
 import pytorch_lightning as pl
 import torch
 import torch.nn.functional as F
+from dataclasses import dataclass
 from pytorch_lightning import Trainer
+from pytorch_lightning.callbacks import ModelCheckpoint
+from pytorch_lightning.loggers import WandbLogger
 from sklearn import metrics
 
 from data import get_dataloaders
-from utils import torch_stack_dicts, sanitize_dict
+from utils import sanitize_dict
 
 
 @dataclass
@@ -19,8 +21,9 @@ class Config:
     dropout: bool = True
     sample_size: int = 8000
     seed: int = 0
+    gpu: str = 0
     batch_size: int = 8
-    target: str = 'sex'
+    target: str = 'ageC'
     weight_decay: float = 0.001
     arch: str = 'peng'
     lr_decay: float = 0.3
@@ -34,11 +37,13 @@ def train(cfg: Config):
         raise ValueError
 
     model = Model(cfg)
-
+    checkpoint_callback = ModelCheckpoint(dirpath=SAVE_PATH, monitor='loss/val',
+                                          save_last=True, mode='min')
     trainer = Trainer(
-        # val_check_interval=500,
+        gpus=str(cfg.gpu),
+        logger=WandbLogger(project='peng'),
         max_epochs=epochs,
-        default_save_path=f'/home/ms883464/deploy/deeperbrain3/subanalyses/3d/results_new/t_{cfg.target}',
+        callbacks=[checkpoint_callback],
     )
     trainer.fit(model)
 
@@ -85,10 +90,12 @@ class BaseNet(pl.LightningModule):
         if self.regression:
             logits = logits.view(logits.size()[:1])
             loss = F.mse_loss(logits, y)
-            y_pred = logits.detach()
-            r2 = max(metrics.r2_score(y_pred, y), -1)  # these are just to clean up the plots..
-            mae = min(metrics.mean_absolute_error(y_pred, y), 20)
-            mse = min(metrics.mean_squared_error(y_pred, y), 500)
+            y_pred = logits.detach().cpu()
+            y = y.cpu()
+            # note that these metrics are only used for diagnostic tensorboard/wandb plots
+            r2 = max(metrics.r2_score(y, y_pred), -1)
+            mae = min(metrics.mean_absolute_error(y, y_pred), 20)
+            mse = min(metrics.mean_squared_error(y, y_pred), 500)
             log = {
                 'loss': loss,
                 'acc': torch.tensor(r2, dtype=torch.float),
@@ -112,29 +119,20 @@ class BaseNet(pl.LightningModule):
 
     def training_step(self, batch, batch_nb):
         x, y = batch
+        x = x.float()
+        y = y.float()
+
         loss_dict = self.loss(x, y, postfix='train')
-        return {'loss': loss_dict['loss/train'],
-                'progress_bar': {'acc': loss_dict['acc/train']},
-                'log': loss_dict}
+        for k in loss_dict:
+            self.log(k, loss_dict[k])
+        return loss_dict['loss/train']
 
     def validation_step(self, batch, batch_nb):
         x, y = batch
         loss_dict = self.loss(x, y, postfix='val')
-        return loss_dict
-
-    def validation_epoch_end(self, outputs):
-        loss_dict = torch_stack_dicts(outputs)
-        return {'progress_bar': {'val_acc': loss_dict['acc/val'], 'val_loss': loss_dict['loss/val']}, 'log': loss_dict}
-
-    def test_step(self, batch, batch_nb):
-        x, y = batch
-        loss_dict = self.loss(x, y, postfix='test')
-        return loss_dict
-
-    def test_epoch_end(self, outputs):
-        loss_dict = torch_stack_dicts(outputs)
-        return {'progress_bar': {'test_acc': loss_dict['acc/test'], 'test_loss': loss_dict['loss/test']},
-                'log': loss_dict}
+        for k in loss_dict:
+            self.log(k, loss_dict[k])
+        return loss_dict['loss/val']
 
     def configure_optimizers(self):
         raise NotImplementedError
